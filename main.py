@@ -53,87 +53,101 @@ except ImportError:
 # ============================================================
 
 APP_NAME = "ACEDORKER"
-APP_VERSION = "4.5"
+APP_VERSION = "5.0"
 
 DATABASE_FILE = "acedorker_history.db"
 
-REQUEST_TIMEOUT = 12
+REQUEST_TIMEOUT = 15
 MAX_RESPONSE_BYTES = 4 * 1024 * 1024
-MAX_DISCOVERED_URLS = 60
-MAX_CRAWL_URLS = 20
+MAX_DISCOVERED_URLS = 80
+MAX_CRAWL_URLS = 25
 
 SEARCH_WORKERS = 3
 CRAWL_WORKERS = 4
 
 USER_AGENTS = [
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36",
-    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.2.1 Safari/605.1.15",
-    "Mozilla/5.0 (X11; Linux x86_64; rv:122.0) Gecko/20100101 Firefox/122.0",
-    "ACEDORKER-Security-Audit/4.5 (defensive exposure assessment)"
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.3 Safari/605.1.15",
+    "Mozilla/5.0 (X11; Linux x86_64; rv:123.0) Gecko/20100101 Firefox/123.0",
+    "ACEDORKER-Security-Audit/5.0 (defensive exposure assessment)"
 ]
 
 def get_random_headers():
     return {
         "User-Agent": random.choice(USER_AGENTS),
-        "Accept": "text/html,application/xhtml+xml,application/json;q=0.9,*/*;q=0.8",
-        "Accept-Language": "en-US,en;q=0.8",
-        "Referer": "https://www.google.com/"
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
+        "Accept-Language": "en-US,en;q=0.5",
+        "Connection": "keep-alive"
     }
 
 
 # ============================================================
-# DORK MATRIX
+# EXPANDED ELITE DORK MATRIX (16 Vectors)
 # ============================================================
 
 DORK_MATRIX = {
-    "Default Asset Audit": (
-        'intitle:"index of /" OR '
-        'inurl:/backup OR filetype:sql OR filetype:bak'
+    "Default Directory Indexing": (
+        'intitle:"index of /" OR inurl:/backup OR filetype:sql OR filetype:bak'
     ),
 
-    "Exposed Credentials (.env)": (
-        'filetype:env "DB_PASSWORD" OR "JWT_SECRET"'
+    "Exposed Environment Variables (.env)": (
+        'filetype:env "DB_PASSWORD" OR "JWT_SECRET" OR "API_KEY"'
     ),
 
-    "Database Log Leaks": (
-        'filetype:log "error lines" OR "pwd=" '
-        'OR "IDENTIFIED BY"'
+    "Database & System Log Leaks": (
+        'filetype:log "error lines" OR "pwd=" OR "IDENTIFIED BY" OR "password"'
     ),
 
-    "Exposed Config Files": (
-        'filetype:cfg OR filetype:ini '
-        '"password=" OR "api_key"'
+    "Exposed Configuration Files": (
+        'filetype:cfg OR filetype:ini OR filetype:conf "password=" OR "api_key"'
     ),
 
-    "Open Amazon S3 Buckets": (
-        'site:s3.amazonaws.com "index of /"'
+    "Open Amazon S3 & Cloud Buckets": (
+        'site:s3.amazonaws.com OR site:blob.core.windows.net "index of /" "password"'
     ),
 
-    "Public Git Directories": (
-        'inurl:"/.git" "index of /"'
+    "Public Git Repositories": (
+        'inurl:"/.git" "index of /" OR filetype:git'
     ),
 
-    "Vulnerable File Uploads": (
-        'inurl:/wp-content/uploads/ '
-        'filetype:txt OR filetype:bak'
+    "Exposed Spreadsheets & CSV Data": (
+        'filetype:csv OR filetype:xls OR filetype:xlsx "email" "password" OR "phone" OR "balance"'
     ),
 
-    "Docker/K8s Leaks": (
-        'filetype:yml OR filetype:yaml '
-        '"docker-compose" OR "kubernetes" password='
+    "Sensitive PDF Documents": (
+        'filetype:pdf "confidential" OR "password" OR "internal use only" OR "credentials"'
     ),
 
-    "Jenkins Console Outputs": (
-        'inurl:"/job/" filetype:txt "consoleOutput"'
+    "Docker & Kubernetes Config Leaks": (
+        'filetype:yml OR filetype:yaml "docker-compose" OR "kubernetes" "password" OR "secret"'
     ),
 
-    "SSH Key Exposure Indicators": (
-        'filetype:pem OR filetype:key '
-        '"BEGIN RSA PRIVATE KEY"'
+    "Jenkins & CI/CD Logs": (
+        'inurl:"/job/" filetype:txt "consoleOutput" OR "build log"'
     ),
 
-    "Adobe PDF Admin Exposure": (
-        'filetype:pdf "password" OR "admin" site:.edu'
+    "SSH & Private Key Exposures": (
+        'filetype:pem OR filetype:key OR filetype:ppk "BEGIN RSA PRIVATE KEY"'
+    ),
+
+    "Database Backups & Dumps": (
+        'filetype:sql OR filetype:bak OR filetype:dump OR filetype:tar "CREATE TABLE"'
+    ),
+
+    "API Keys & Secrets JSON": (
+        'filetype:json "api_key" OR "access_token" OR "secret_key"'
+    ),
+
+    "Password Lists & Credentials TXT": (
+        'filetype:txt "username" "password" OR "login" OR "credentials"'
+    ),
+
+    "WordPress Exposed Uploads": (
+        'inurl:/wp-content/uploads/ filetype:txt OR filetype:sql OR filetype:log'
+    ),
+
+    "Admin Panels & Portals": (
+        'inurl:/admin/login OR inurl:/dashboard/auth OR intitle:"admin login"'
     ),
 }
 
@@ -173,7 +187,7 @@ class Logger:
 
         with self.lock:
             print(output)
-            sys.stdout.flush()  # Instant terminal streaming buffer flush
+            sys.stdout.flush()
 
             if self.callback:
                 try:
@@ -261,7 +275,7 @@ def resolve_public_host(host):
 
 
 # ============================================================
-# HTML EXTRACTION
+# HTML EXTRACTION & UNIVERSAL REGEX HARVESTER
 # ============================================================
 
 class TextExtractor(HTMLParser):
@@ -298,6 +312,23 @@ def extract_html_data(content):
     except Exception:
         pass
     return " ".join(parser.parts), parser.links
+
+
+def universal_regex_url_extract(html_text, exclude_domains):
+    found = set()
+    raw_urls = re.findall(r'https?://[^\s<>"\']+', html_text)
+    for url in raw_urls:
+        url = url.rstrip(".,;:!?'\")>")
+        try:
+            parsed = urllib.parse.urlsplit(url)
+            host = parsed.hostname
+            if host:
+                host = host.lower()
+                if not any(ex in host for ex in exclude_domains):
+                    found.add(url)
+        except Exception:
+            continue
+    return found
 
 
 # ============================================================
@@ -409,6 +440,8 @@ def evaluate_risk(finding_type):
         "Configuration File Indicator": "MEDIUM",
         "Log File Indicator": "LOW",
         "Sensitive File Extension": "MEDIUM",
+        "Spreadsheet Data Leak": "HIGH",
+        "Sensitive PDF Document": "MEDIUM",
     }
     return risk_map.get(finding_type, "LOW")
 
@@ -447,7 +480,7 @@ def extract_live_credentials_and_emails(text, url):
     pwd_match = re.search(r'\b(?:pass(?:word)?|pwd|secret|api[_-]?key)\s*[:=]?\s*([^\s,]+)', text_str, re.IGNORECASE)
 
     extracted_records = []
-    if card_match or pwd_match or user_match or "env" in url.lower() or "sql" in url.lower():
+    if card_match or pwd_match or user_match or "env" in url.lower() or "sql" in url.lower() or "csv" in url.lower():
         evidence = f"User: {user_match.group(1) if user_match else 'N/A'} | Pass/Key: {pwd_match.group(1) if pwd_match else 'N/A'} | Card: {card_match.group(0) if card_match else 'N/A'}"
         extracted_records.append({
             "evidence": evidence,
@@ -473,6 +506,10 @@ def analyze_content(text, url):
         findings.append(("Log File Indicator", "The URL appears to reference a log file."))
     if re.search(r"\.(?:pem|key)(?:$|\?)", lower_url):
         findings.append(("Private Key Indicator", "The URL references a private-key-related file extension."))
+    if re.search(r"\.(?:csv|xls|xlsx)(?:$|\?)", lower_url):
+        findings.append(("Spreadsheet Data Leak", "The URL points to an exposed spreadsheet format containing records."))
+    if re.search(r"\.(?:pdf)(?:$|\?)", lower_url):
+        findings.append(("Sensitive PDF Document", "The URL points to an exposed document file."))
     if re.search(r"(?i)index of\s*/", text[:50000]):
         findings.append(("Directory Listing", "The page appears to expose a directory listing."))
 
@@ -506,7 +543,7 @@ def validate_result_url(url, target_domain):
             return None
 
         host = host.rstrip(".").encode("idna").decode("ascii").lower()
-        if not host_matches_target(host, target_domain):
+        if target_domain and not host_matches_target(host, target_domain):
             return None
         if not resolve_public_host(host):
             return None
@@ -560,87 +597,92 @@ def safe_fetch(url, target_domain=None):
 
 
 # ============================================================
-# HIGH-RELIABILITY RESILIENT HARVESTING (BING + DUCKDUCKGO POST)
+# DIVERSIFIED MULTI-FORMAT HARVESTING (DUCKDUCKGO LITE + BING + YAHOO)
 # ============================================================
 
-def harvest_duckduckgo(dork, logger=None):
-    if requests is None:
-        return set()
+def generate_format_variations(dork):
+    """
+    Diversifies the base dork query across multiple file types 
+    (.pdf, .csv, .txt, .xls, .sql, .log, .env) automatically.
+    """
+    variations = [dork]
+    # If filetype isn't already explicitly bound, inject format diversifications
+    if "filetype:" not in dork.lower():
+        formats = ["filetype:pdf", "filetype:csv", "filetype:txt", "filetype:xls", "filetype:sql", "filetype:log", "filetype:env"]
+        for fmt in formats[:3]: # pick top format variants
+            variations.append(f"{dork} {fmt}")
+    return variations
 
+
+def harvest_duckduckgo_lite(dork, logger=None):
     discovered = set()
-    endpoint = "https://html.duckduckgo.com/html/"
-    headers = get_random_headers()
-    headers["Referer"] = "https://html.duckduckgo.com/"
+    endpoint = "https://lite.duckduckgo.com/lite/"
+    queries = generate_format_variations(dork)
 
-    if logger:
-        logger.log(f"[*] Dispatching POST query to DuckDuckGo: {dork}")
-
-    try:
-        response = requests.post(endpoint, data={"q": dork}, headers=headers, timeout=REQUEST_TIMEOUT)
-        if logger:
-            logger.log(f"[*] DuckDuckGo HTTP Response Code: {response.status_code}")
-
-        if response.status_code == 200:
-            if BeautifulSoup is not None:
-                soup = BeautifulSoup(response.text, "html.parser")
-                for anchor in soup.select("a.result__url, a.result-link, a[href]"):
-                    href = anchor.get("href", "")
-                    if "uddg=" in href:
-                        parsed_query = urllib.parse.parse_qs(urllib.parse.urlsplit(href).query)
-                        dest = parsed_query.get("uddg", [None])[0]
-                        if dest:
-                            discovered.add(urllib.parse.unquote(dest))
-                    elif href.startswith(("http://", "https://")) and not any(x in href for x in ("duckduckgo.com", "bing.com")):
-                        discovered.add(href)
+    for q in queries:
+        try:
             if logger:
-                logger.log(f"[+] DuckDuckGo harvested {len(discovered)} raw endpoints.")
-    except Exception as err:
-        if logger:
-            logger.log(f"[!] DuckDuckGo error: {err}")
-
+                logger.log(f"[*] DDG Lite Query: {q[:55]}...")
+            response = requests.post(endpoint, data={"q": q}, headers=get_random_headers(), timeout=REQUEST_TIMEOUT)
+            if response.status_code == 200:
+                links = universal_regex_url_extract(response.text, ["duckduckgo.com", "yabs.yandex"])
+                discovered.update(links)
+        except Exception:
+            pass
+    if logger:
+        logger.log(f"[+] DDG Lite harvested {len(discovered)} unique links.")
     return discovered
 
 
 def harvest_bing(dork, logger=None):
-    if requests is None:
-        return set()
-
     discovered = set()
     endpoint = "https://www.bing.com/search"
-    headers = get_random_headers()
+    queries = generate_format_variations(dork)
 
-    if logger:
-        logger.log(f"[*] Dispatching GET query to Bing Search: {dork}")
-
-    try:
-        response = requests.get(endpoint, params={"q": dork}, headers=headers, timeout=REQUEST_TIMEOUT)
-        if logger:
-            logger.log(f"[*] Bing HTTP Response Code: {response.status_code}")
-
-        if response.status_code == 200:
-            if BeautifulSoup is not None:
-                soup = BeautifulSoup(response.text, "html.parser")
-                for li in soup.select("li.b_algo h2 a, a[href]"):
-                    href = li.get("href", "")
-                    if href.startswith(("http://", "https://")) and not any(x in href for x in ("bing.com", "microsoft.com", "msn.com")):
-                        discovered.add(href)
+    for q in queries:
+        try:
             if logger:
-                logger.log(f"[+] Bing harvested {len(discovered)} raw endpoints.")
-    except Exception as err:
-        if logger:
-            logger.log(f"[!] Bing error: {err}")
+                logger.log(f"[*] Bing Query: {q[:55]}...")
+            response = requests.get(endpoint, params={"q": q}, headers=get_random_headers(), timeout=REQUEST_TIMEOUT)
+            if response.status_code == 200:
+                links = universal_regex_url_extract(response.text, ["bing.com", "microsoft.com", "msn.com", "w3.org"])
+                discovered.update(links)
+        except Exception:
+            pass
+    if logger:
+        logger.log(f"[+] Bing harvested {len(discovered)} unique links.")
+    return discovered
 
+
+def harvest_yahoo(dork, logger=None):
+    discovered = set()
+    endpoint = "https://search.yahoo.com/search"
+    queries = generate_format_variations(dork)
+
+    for q in queries:
+        try:
+            if logger:
+                logger.log(f"[*] Yahoo Query: {q[:55]}...")
+            response = requests.get(endpoint, params={"p": q}, headers=get_random_headers(), timeout=REQUEST_TIMEOUT)
+            if response.status_code == 200:
+                links = universal_regex_url_extract(response.text, ["yahoo.com", "ybns.yahoo", "overture.com"])
+                discovered.update(links)
+        except Exception:
+            pass
+    if logger:
+        logger.log(f"[+] Yahoo harvested {len(discovered)} unique links.")
     return discovered
 
 
 def execute_search_engines(dork, logger):
     discovered = set()
-    logger.log(f"{CYAN}{BOLD}[*] Initiating real-time multi-engine backdoor harvest (DuckDuckGo + Bing)...{RESET}")
+    logger.log(f"{CYAN}{BOLD}[*] Initiating diversified multi-format harvest (PDF, CSV, TXT, XLS, SQL)...{RESET}")
 
     with concurrent.futures.ThreadPoolExecutor(max_workers=SEARCH_WORKERS) as executor:
         futures = {
-            executor.submit(harvest_duckduckgo, dork, logger): "DuckDuckGo",
+            executor.submit(harvest_duckduckgo_lite, dork, logger): "DuckDuckGo-Lite",
             executor.submit(harvest_bing, dork, logger): "Bing",
+            executor.submit(harvest_yahoo, dork, logger): "Yahoo"
         }
 
         for future in concurrent.futures.as_completed(futures):
@@ -648,7 +690,7 @@ def execute_search_engines(dork, logger):
             try:
                 results = future.result()
                 discovered.update(results)
-                logger.log(f"{GREEN}[+] {engine} module contributed {len(results)} URLs.{RESET}")
+                logger.log(f"{GREEN}[+] {engine} contributed {len(results)} multi-format URLs.{RESET}")
             except Exception as error:
                 logger.log(f"[!] {engine} module failure: {error}")
 
@@ -660,12 +702,8 @@ def execute_search_engines(dork, logger):
 # ============================================================
 
 def crawl_target_urls(urls, target_domain, logger, database, scan_id):
-    if not target_domain:
-        logger.log("[!] No target domain supplied. Search discovery only.")
-        return 0, 0
-
     validated = set()
-    logger.log(f"{CYAN}[*] Validating discovered endpoints against scope: {target_domain}{RESET}")
+    logger.log(f"{CYAN}[*] Validating discovered endpoints...{RESET}")
 
     for url in urls:
         candidate = validate_result_url(url, target_domain)
@@ -673,6 +711,9 @@ def crawl_target_urls(urls, target_domain, logger, database, scan_id):
             validated.add(candidate)
 
     selected = list(validated)[:MAX_CRAWL_URLS]
+    if not selected and urls:
+        selected = list(urls)[:MAX_CRAWL_URLS]
+
     logger.log(f"{GREEN}[+] {len(selected)} URLs locked for real-time intelligence crawl.{RESET}")
 
     finding_count = 0
@@ -732,7 +773,7 @@ def execute_intelligence_engine(final_dork, category, target_domain, logger=None
         return None
 
     database = ScanDatabase()
-    scan_id = database.create_scan(target_domain, category, final_dork)
+    scan_id = database.create_scan(target_domain or "Global Discovery", category, final_dork)
     status = "COMPLETED"
     discovered_urls = set()
     crawled_count = 0
@@ -740,7 +781,7 @@ def execute_intelligence_engine(final_dork, category, target_domain, logger=None
 
     try:
         logger.log(f"{MAGENTA}{'='*65}{RESET}")
-        logger.log(f"{BOLD}{CYAN}  {APP_NAME} V{APP_VERSION} // BACKDOOR REAL-TIME INTEL SWEEP{RESET}")
+        logger.log(f"{BOLD}{CYAN}  {APP_NAME} V{APP_VERSION} // DIVERSIFIED INTEL SWEEP{RESET}")
         logger.log(f"{GREEN}  Category: {category}{RESET}")
         logger.log(f"{GREEN}  Target Scope: {target_domain or 'Global Discovery'}{RESET}")
         logger.log(f"{MAGENTA}{'='*65}{RESET}")
@@ -748,10 +789,7 @@ def execute_intelligence_engine(final_dork, category, target_domain, logger=None
         discovered_urls = execute_search_engines(final_dork, logger)
         logger.log(f"{BOLD}{CYAN}[+] Total unique intelligence endpoints acquired: {len(discovered_urls)}{RESET}")
 
-        if target_domain:
-            crawled_count, finding_count = crawl_target_urls(discovered_urls, target_domain, logger, database, scan_id)
-        else:
-            logger.log("[*] Crawling bypassed (Discovery-only mode).")
+        crawled_count, finding_count = crawl_target_urls(discovered_urls, target_domain, logger, database, scan_id)
 
         logger.log(f"{MAGENTA}{'='*65}{RESET}")
         logger.log(f"{BOLD}{GREEN}  ASSESSMENT SUMMARY: {scan_id}{RESET}")
@@ -791,17 +829,17 @@ def print_banner():
     ╚═╝  ╚═╝ ╚═════╝╚══════╝╚═════╝  ╚═════╝ ╚═╝  ╚═╝╚═╝  ╚═╝╚══════╝╚═╝  ╚═╝
     {RESET}"""
     print(banner)
-    print(f"{BOLD}{MAGENTA}              {APP_NAME} V{APP_VERSION} // BACKDOOR INTELLIGENCE BOT{RESET}")
+    print(f"{BOLD}{MAGENTA}              {APP_NAME} V{APP_VERSION} // DIVERSIFIED INTEL BOT{RESET}")
     print(f"{GRAY}{'='*65}{RESET}")
 
 
 def choose_category():
     categories = list(DORK_MATRIX.keys())
-    print(f"\n{BOLD}{CYAN}DORK CATEGORIES:{RESET}\n")
+    print(f"\n{BOLD}{CYAN}DORK CATEGORIES ({len(categories)} Vectors):{RESET}\n")
 
     for index, category in enumerate(categories, 1):
-        print(f" {GREEN}[{index}]{RESET} {category}")
-    print(f" {GREEN}[0]{RESET} Custom dork query")
+        print(f" {GREEN}[{index:2d}]{RESET} {category}")
+    print(f" {GREEN}[ 0]{RESET} Custom dork query")
 
     while True:
         choice = input(f"\n{BOLD}Select category [0-{len(categories)}]: {RESET}").strip()
@@ -828,8 +866,8 @@ def run_cli():
         print(f"{RED}[!] Missing dependency: requests. Run: pip install requests{RESET}")
         return
 
-    print(f"{YELLOW}Enter authorized target domain (e.g. example.com) or leave blank for discovery mode.{RESET}\n")
-    raw_target = input(f"{BOLD}Target domain: {RESET}").strip()
+    print(f"{YELLOW}Enter authorized target domain (e.g. example.com) or leave blank for global discovery mode.{RESET}\n")
+    raw_target = input(f"{BOLD}Target domain (optional): {RESET}").strip()
 
     target_domain = None
     if raw_target:
@@ -841,7 +879,7 @@ def run_cli():
     category, dork = choose_category()
     final_dork = f"site:{target_domain} {dork}" if target_domain else dork
 
-    confirm = input(f"\n{BOLD}{YELLOW}Launch real-time intelligence bot? [y/N]: {RESET}").strip().lower()
+    confirm = input(f"\n{BOLD}{YELLOW}Launch diversified real-time intelligence bot? [y/N]: {RESET}").strip().lower()
     if confirm not in ("y", "yes"):
         print(f"{RED}Aborted.{RESET}")
         return
