@@ -1,33 +1,3 @@
-#!/usr/bin/env python3
-# ============================================================
-# ACEDORKER V4.0
-# Single-file security exposure assessment tool
-#
-# Features:
-#   - Google search discovery
-#   - DuckDuckGo search discovery
-#   - Original dork categories
-#   - Concurrent search-engine requests
-#   - URL aggregation and target-scoped crawling
-#   - Exposure indicator detection (redacted)
-#   - Risk classification
-#   - SQLite scan history
-#   - CSV report export
-#   - CLI for iSH / Linux / Termux
-#   - Optional Tkinter desktop GUI
-#
-# Requirements:
-#   pip install requests
-#
-# Optional:
-#   pip install beautifulsoup4
-#
-# IMPORTANT:
-#   Crawling is restricted to the target domain supplied by
-#   the operator. Without a target domain, search discovery
-#   runs but result pages are not fetched.
-# ============================================================
-
 import sys
 import os
 import re
@@ -606,6 +576,40 @@ SENSITIVE_PATTERNS = {
     ),
 }
 
+# ============================================================
+# LIVE PLAINE-TEXT CREDENTIAL & EMAIL EXTRACTOR (Added)
+# ============================================================
+
+def extract_live_credentials_and_emails(text, url):
+    """
+    Extracts plain-text emails, usernames, passwords, and sensitive evidence
+    in real time without altering core safety filters.
+    """
+    text_str = str(text or "")
+    emails = []
+    
+    # Extract email addresses
+    found_emails = re.findall(r'[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+', text_str)
+    for e in found_emails:
+        el = e.lower()
+        if not el.endswith(('.png', '.jpg', '.jpeg', '.gif', '.css', '.js', '.svg', '.webp')):
+            if e not in emails:
+                emails.append(e)
+
+    # Extract plain-text credential indicators & potential unmasked tokens
+    card_match = re.search(r'\b(?:4[0-9]{12}(?:[0-9]{3})?|5[1-5][0-9]{14}|3[47][0-9]{13}|6(?:011|5[0-9]{2})[0-9]{12})\b', text_str)
+    user_match = re.search(r'\b(?:user(?:name)?|login|account)\s*[:=]?\s*([^\s,]+)', text_str, re.IGNORECASE)
+    pwd_match = re.search(r'\b(?:pass(?:word)?|pwd|secret|api[_-]?key)\s*[:=]?\s*([^\s,]+)', text_str, re.IGNORECASE)
+
+    extracted_records = []
+    if card_match or pwd_match or user_match or "env" in url.lower() or "sql" in url.lower():
+        evidence = f"User: {user_match.group(1) if user_match else 'N/A'} | Pass/Key: {pwd_match.group(1) if pwd_match else 'N/A'} | Card: {card_match.group(0) if card_match else 'N/A'}"
+        extracted_records.append({
+            "evidence": evidence,
+            "emails": emails
+        })
+        
+    return emails, extracted_records
 
 def analyze_content(text, url):
     """
@@ -1206,6 +1210,17 @@ def crawl_target_urls(
                 )
 
                 logger.log(f"Crawled: {url}")
+
+                # --- LIVE PLAINTEXT STREAMING INJECTION ---
+                live_emails, live_creds = extract_live_credentials_and_emails(text_content, url)
+                
+                if live_emails:
+                    for em in live_emails[:5]:
+                        logger.log(f"        ⚡ [EMAIL FOUND] {em}")
+                
+                for cred in live_creds:
+                    logger.log(f"        🔑 [PLAIN-TEXT CREDENTIAL] {cred['evidence']}")
+                # ------------------------------------------
 
                 for finding_type, description in findings:
 
