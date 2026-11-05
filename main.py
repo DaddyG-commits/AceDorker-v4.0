@@ -53,7 +53,7 @@ except ImportError:
 # ============================================================
 
 APP_NAME = "ACEDORKER"
-APP_VERSION = "4.3"
+APP_VERSION = "4.5"
 
 DATABASE_FILE = "acedorker_history.db"
 
@@ -62,14 +62,14 @@ MAX_RESPONSE_BYTES = 4 * 1024 * 1024
 MAX_DISCOVERED_URLS = 60
 MAX_CRAWL_URLS = 20
 
-SEARCH_WORKERS = 2
+SEARCH_WORKERS = 3
 CRAWL_WORKERS = 4
 
 USER_AGENTS = [
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36",
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.2.1 Safari/605.1.15",
-    "Mozilla/5.0 (X11; Linux x86_64; rv:121.0) Gecko/20100101 Firefox/121.0",
-    "ACEDORKER-Security-Audit/4.3 (defensive exposure assessment)"
+    "Mozilla/5.0 (X11; Linux x86_64; rv:122.0) Gecko/20100101 Firefox/122.0",
+    "ACEDORKER-Security-Audit/4.5 (defensive exposure assessment)"
 ]
 
 def get_random_headers():
@@ -139,7 +139,7 @@ DORK_MATRIX = {
 
 
 # ============================================================
-# LOGGING & INSTANT REAL-TIME FLUSH ENGINE
+# BACKDOOR REAL-TIME LOGGER & FLUSH ENGINE
 # ============================================================
 
 class Logger:
@@ -161,9 +161,9 @@ class Logger:
             colored_msg = f"{MAGENTA}{message}{RESET}"
         elif "🔑" in message or "CREDENTIAL" in message:
             colored_msg = f"{GREEN}{BOLD}{message}{RESET}"
-        elif "Crawled:" in message or "discovered" in message or "CRAWLED" in message:
+        elif "Crawled:" in message or "discovered" in message or "CRAWLED" in message or "[+]" in message:
             colored_msg = f"{GREEN}{message}{RESET}"
-        elif "error" in message.lower() or "failed" in message.lower() or "rate-limit" in message.lower():
+        elif "error" in message.lower() or "failed" in message.lower() or "[!]" in message:
             colored_msg = f"{YELLOW}{message}{RESET}"
         else:
             colored_msg = f"{CYAN}{message}{RESET}"
@@ -173,7 +173,7 @@ class Logger:
 
         with self.lock:
             print(output)
-            sys.stdout.flush()  # Ensures instant real-time printing without output buffering
+            sys.stdout.flush()  # Instant terminal streaming buffer flush
 
             if self.callback:
                 try:
@@ -560,99 +560,87 @@ def safe_fetch(url, target_domain=None):
 
 
 # ============================================================
-# RESILIENT SEARCH DISCOVERY & RETRY ENGINE
+# HIGH-RELIABILITY RESILIENT HARVESTING (BING + DUCKDUCKGO POST)
 # ============================================================
 
-def extract_search_results(html):
-    results = set()
-    if BeautifulSoup is not None:
-        try:
-            soup = BeautifulSoup(html, "html.parser")
-            for anchor in soup.select("a[href]"):
-                href = anchor.get("href", "")
-                if href.startswith("/url?"):
-                    query = urllib.parse.parse_qs(urllib.parse.urlsplit(href).query)
-                    candidate = query.get("q", [None])[0] or query.get("url", [None])[0]
-                    if candidate:
-                        results.add(candidate)
-                elif href.startswith(("http://", "https://")):
-                    host = urllib.parse.urlsplit(href).hostname
-                    if host and not any(ex in host for ex in ("google.", "duckduckgo.", "bing.")):
-                        results.add(href)
-            return results
-        except Exception:
-            pass
-    return results
-
-
-def harvest_search_engine(engine_name, dork, logger=None):
+def harvest_duckduckgo(dork, logger=None):
     if requests is None:
         return set()
 
     discovered = set()
-    queries = [
-        dork,
-        f"{dork} site:org OR site:com OR site:net",
-        f"{dork} inurl:admin OR inurl:config"
-    ]
+    endpoint = "https://html.duckduckgo.com/html/"
+    headers = get_random_headers()
+    headers["Referer"] = "https://html.duckduckgo.com/"
 
-    endpoints = {
-        "Google": "https://www.google.com/search",
-        "DuckDuckGo": "https://html.duckduckgo.com/html/"
-    }
+    if logger:
+        logger.log(f"[*] Dispatching POST query to DuckDuckGo: {dork}")
 
-    endpoint = endpoints.get(engine_name, endpoints["DuckDuckGo"])
+    try:
+        response = requests.post(endpoint, data={"q": dork}, headers=headers, timeout=REQUEST_TIMEOUT)
+        if logger:
+            logger.log(f"[*] DuckDuckGo HTTP Response Code: {response.status_code}")
 
-    for attempt, q in enumerate(queries, 1):
-        try:
+        if response.status_code == 200:
+            if BeautifulSoup is not None:
+                soup = BeautifulSoup(response.text, "html.parser")
+                for anchor in soup.select("a.result__url, a.result-link, a[href]"):
+                    href = anchor.get("href", "")
+                    if "uddg=" in href:
+                        parsed_query = urllib.parse.parse_qs(urllib.parse.urlsplit(href).query)
+                        dest = parsed_query.get("uddg", [None])[0]
+                        if dest:
+                            discovered.add(urllib.parse.unquote(dest))
+                    elif href.startswith(("http://", "https://")) and not any(x in href for x in ("duckduckgo.com", "bing.com")):
+                        discovered.add(href)
             if logger:
-                logger.log(f"[*] {engine_name} query attempt {attempt} for: {q[:50]}...")
-            
-            time.sleep(random.uniform(1.0, 2.0))
+                logger.log(f"[+] DuckDuckGo harvested {len(discovered)} raw endpoints.")
+    except Exception as err:
+        if logger:
+            logger.log(f"[!] DuckDuckGo error: {err}")
 
-            params = {"q": q}
-            if engine_name == "Google":
-                params["num"] = "30"
+    return discovered
 
-            response = requests.get(
-                endpoint,
-                params=params,
-                headers=get_random_headers(),
-                timeout=REQUEST_TIMEOUT,
-                allow_redirects=False
-            )
 
-            if response.status_code in (403, 429):
-                if logger:
-                    logger.log(f"[!] {engine_name} rate-limited. Rotating identity and retrying...")
-                continue
+def harvest_bing(dork, logger=None):
+    if requests is None:
+        return set()
 
-            if response.status_code == 200:
-                results = extract_search_results(response.text)
-                if results:
-                    discovered.update(results)
-                    if logger:
-                        logger.log(f"[+] {engine_name}: Harvested {len(results)} target links successfully.")
-                    break
-                else:
-                    if logger:
-                        logger.log(f"[*] {engine_name} returned 0 results for variation {attempt}. Trying next query...")
+    discovered = set()
+    endpoint = "https://www.bing.com/search"
+    headers = get_random_headers()
 
-        except Exception as error:
+    if logger:
+        logger.log(f"[*] Dispatching GET query to Bing Search: {dork}")
+
+    try:
+        response = requests.get(endpoint, params={"q": dork}, headers=headers, timeout=REQUEST_TIMEOUT)
+        if logger:
+            logger.log(f"[*] Bing HTTP Response Code: {response.status_code}")
+
+        if response.status_code == 200:
+            if BeautifulSoup is not None:
+                soup = BeautifulSoup(response.text, "html.parser")
+                for li in soup.select("li.b_algo h2 a, a[href]"):
+                    href = li.get("href", "")
+                    if href.startswith(("http://", "https://")) and not any(x in href for x in ("bing.com", "microsoft.com", "msn.com")):
+                        discovered.add(href)
             if logger:
-                logger.log(f"[!] {engine_name} error: {error}")
+                logger.log(f"[+] Bing harvested {len(discovered)} raw endpoints.")
+    except Exception as err:
+        if logger:
+            logger.log(f"[!] Bing error: {err}")
 
     return discovered
 
 
 def execute_search_engines(dork, logger):
     discovered = set()
-    logger.log(f"{CYAN}{BOLD}[*] Initiating real-time multi-engine harvest...{RESET}")
+    logger.log(f"{CYAN}{BOLD}[*] Initiating real-time multi-engine backdoor harvest (DuckDuckGo + Bing)...{RESET}")
 
     with concurrent.futures.ThreadPoolExecutor(max_workers=SEARCH_WORKERS) as executor:
         futures = {
-            executor.submit(harvest_search_engine, "Google", dork, logger): "Google",
-            executor.submit(harvest_search_engine, "DuckDuckGo", dork, logger): "DuckDuckGo",
+            executor.submit(harvest_duckduckgo, dork, logger): "DuckDuckGo",
+            executor.submit(harvest_bing, dork, logger): "Bing",
         }
 
         for future in concurrent.futures.as_completed(futures):
@@ -660,8 +648,9 @@ def execute_search_engines(dork, logger):
             try:
                 results = future.result()
                 discovered.update(results)
+                logger.log(f"{GREEN}[+] {engine} module contributed {len(results)} URLs.{RESET}")
             except Exception as error:
-                logger.log(f"[!] {engine} module error: {error}")
+                logger.log(f"[!] {engine} module failure: {error}")
 
     return discovered
 
@@ -751,7 +740,7 @@ def execute_intelligence_engine(final_dork, category, target_domain, logger=None
 
     try:
         logger.log(f"{MAGENTA}{'='*65}{RESET}")
-        logger.log(f"{BOLD}{CYAN}  {APP_NAME} V{APP_VERSION} // REAL-TIME INTELLIGENCE SWEEP{RESET}")
+        logger.log(f"{BOLD}{CYAN}  {APP_NAME} V{APP_VERSION} // BACKDOOR REAL-TIME INTEL SWEEP{RESET}")
         logger.log(f"{GREEN}  Category: {category}{RESET}")
         logger.log(f"{GREEN}  Target Scope: {target_domain or 'Global Discovery'}{RESET}")
         logger.log(f"{MAGENTA}{'='*65}{RESET}")
@@ -802,7 +791,7 @@ def print_banner():
     ╚═╝  ╚═╝ ╚═════╝╚══════╝╚═════╝  ╚═════╝ ╚═╝  ╚═╝╚═╝  ╚═╝╚══════╝╚═╝  ╚═╝
     {RESET}"""
     print(banner)
-    print(f"{BOLD}{MAGENTA}              {APP_NAME} V{APP_VERSION} // CYBER INTELLIGENCE BOT{RESET}")
+    print(f"{BOLD}{MAGENTA}              {APP_NAME} V{APP_VERSION} // BACKDOOR INTELLIGENCE BOT{RESET}")
     print(f"{GRAY}{'='*65}{RESET}")
 
 
